@@ -2,22 +2,25 @@
 # -*- coding: utf-8 -*-
 
 import os
-import urllib2
+import urllib.parse as urllibParse
+import urllib.request as urllibReq
 import json
 import sys
-reload(sys)
-sys.setdefaultencoding('utf-8')
-
+from importlib import reload
 # word操作库python-docx
 from docx import Document
 from docx.oxml.ns import qn
 from docx.shared import Pt
-# python-docx 格式参考：https://zhuanlan.zhihu.com/p/23708800?utm_source=tuicool&utm_medium=referral
-
 import config
 import log
 
+reload(sys)
+# sys.setdefaultencoding('utf-8')
+
+# python-docx 格式参考：https://zhuanlan.zhihu.com/p/23708800?utm_source=tuicool&utm_medium=referral
+
 logger = log.Log(config.log_dir, config.log_name)
+
 
 class DownDocx(object):
 	def __init__(self, fileDir, url, info):
@@ -35,43 +38,59 @@ class DownDocx(object):
 				return url['pageLoadUrl']
 		return ''
 
-	def down(self):
+	@staticmethod
+	def encode(url, key):
+		keyBegin = url.find(key)
+		valueBegin = url.find('=', keyBegin) + 1
+		valueEnd = url.find('&', valueBegin)
+		return url[:valueBegin] + urllibParse.quote(url[valueBegin:valueEnd]) + url[valueEnd:]
+
+	def down(self, pageStart, pageEnd):
 		reqHeader = config.reqHeaderBDWK
 		reqHeader['Referer'] = self.URL
-		i = 1
+		pageStart = 1 if pageStart is None else pageStart
 		docFileName = self.fileDir + self.WkInfo['title'] + '.' + self.WkInfo['docType']
-		document = Document() # 创建doc(x)文档
-		while i <= self.WkInfo['totalPageNum']:
-			jsonUrl = DownDocx.geturl(self.WkInfo['htmlUrls']['json'], i)
+		document = Document()  # 创建doc(x)文档
+		while pageStart <= pageEnd:
+			jsonUrl = DownDocx.geturl(self.WkInfo['htmlUrls']['json'], pageStart)
 			if len(jsonUrl) == 0:
 				logger.error('下载文档失败，查找URL失败！')
+				document.save(docFileName)
 				return False
-			jsonUrl = jsonUrl.replace('\\', '')
-			jsonUrl = jsonUrl.replace(' ', '%20')
-			req = urllib2.Request(jsonUrl, headers=reqHeader)
-			res = urllib2.urlopen(req)
-			res = res.read()
-			jsonRet = res[res.find('(')+1 : res.rfind(')')]
+			jsonUrl = jsonUrl.replace('\\/', '/')
+
+			jsonUrl = DownDocx.encode(jsonUrl, 'responseCacheControl')
+			jsonUrl = DownDocx.encode(jsonUrl, 'responseExpires')
+			jsonUrl = DownDocx.encode(jsonUrl, 'authorization')
+			jsonUrl = DownDocx.encode(jsonUrl, 'x-bce-range')
+			jsonUrl = DownDocx.encode(jsonUrl, 'token')
+			print('第' + str(pageStart) + '页\t' + jsonUrl)
+
+			req = urllibReq.Request(jsonUrl, headers=reqHeader)
+			res = urllibReq.urlopen(req)
+			res = res.read().decode()
+			jsonRet = res[res.find('(') + 1: res.rfind(')')]
 			logger.info('打印一下，获取json数据内容为 ' + jsonRet)
 			jsonRet = json.loads(jsonRet)
 			# 再处理获取的页面内容
-			first = 0
+			first = True
 			for item in jsonRet['body']:
 				if item['t'] != 'word':
 					continue
-				if first == 0 or (item['ps'] and item['ps']['_enter'] == 1):
-					first = 1
+				newLine = 'ps' in item and item['ps'] is not None and '_enter' in item['ps']
+				if first or newLine:
+					first = False
 					pg = document.add_paragraph()
-				if item['ps'] and item['ps']['_enter'] == 1:
+				if newLine:
 					continue
 				run = pg.add_run(item['c'])
 				# 添加格式；分析不出来，就统一宋体、五号
 				run.font.name = u'宋体'
 				run._element.rPr.rFonts.set(qn('w:eastAsia'), u'宋体')
-				run.font.size = Pt(10.5)
+				run.font.size = Pt(item['p']['h'])
 			# 下一页
-			if i < self.WkInfo['totalPageNum']:
+			if pageStart < pageEnd:
 				document.add_page_break()
-			i += 1
+			pageStart += 1
 		document.save(docFileName)
 		return True
