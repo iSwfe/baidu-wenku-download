@@ -1,0 +1,6 @@
+# Default ignored files
+/workspace.xml
+*.iml
+/.idea/
+/log/
+/down/
