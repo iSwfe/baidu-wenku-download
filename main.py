@@ -86,7 +86,7 @@ def main():
 		return
 	pageStart = 1
 	try:
-		if len(sys.argv) is 3:
+		if len(sys.argv) == 3:
 			pageStart = int(sys.argv[2])
 	except ValueError:
 		usage()
