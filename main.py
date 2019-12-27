@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 
 import os
-from urllib import parse
 import urllib.parse as urllibParse
 import urllib.request as urllibReq
 import json
